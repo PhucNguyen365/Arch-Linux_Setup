@@ -1,100 +1,76 @@
 #!/bin/bash
-
-# This script automates the installation of Arch Linux.
-# Please ensure you have read the README.md file and completed the necessary
-# pre-installation steps (partitioning, formatting, and mounting).
+# Automated Arch Linux installation script (simplified & safe)
 
 set -euo pipefail
 
 # Enable debug if needed
 DEBUG=false
-if $DEBUG; then
-    set -x
-fi
+$DEBUG && set -x
 
-# Install essential packages
-pacstrap /mnt base linux linux-firmware grub networkmanager sudo xorg gnome ibus ibus-unikey \
-vim nano firefox openssh open-vm-tools gtkmm3 gnome-extra || { echo "Pacstrap failed"; exit 1; }
+echo "[INFO] Installing essential packages..."
+pacstrap /mnt base linux linux-firmware grub networkmanager sudo xorg gnome \
+ibus ibus-unikey vim nano firefox openssh open-vm-tools gtkmm3 gnome-extra
+echo "[INFO] Pacstrap done"
 
-# Generate fstab file
-genfstab -U /mnt >> /mnt/etc/fstab || { echo "Failed to generate fstab"; exit 1; }
+echo "[INFO] Generating fstab..."
+genfstab -U /mnt >> /mnt/etc/fstab
+echo "[INFO] fstab generated"
 
 # Create post-install script
 cat > /mnt/root/post-install.sh <<'EOF'
 #!/bin/bash
-
 set -euo pipefail
 
-# Configure timezone
+echo "[INFO] Configuring timezone..."
 ln -sf /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
 hwclock --systohc
 
-# Configure language
-if ! grep -q "en_US.UTF-8 UTF-8" /etc/locale.gen; then
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
-fi
+echo "[INFO] Configuring locale..."
+grep -q "en_US.UTF-8 UTF-8" /etc/locale.gen || echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
 echo "en_US.UTF-8" > /etc/locale.conf
 
-# Configure hostname
-if [ ! -f /etc/hostname ]; then
-    echo "archlinux" > /etc/hostname
-fi
+echo "[INFO] Configuring hostname and hosts..."
+echo "archlinux" > /etc/hostname
 cat > /etc/hosts <<EOT
 127.0.0.1    localhost
 ::1          localhost
 127.0.1.1    archlinux.localdomain archlinux
 EOT
 
-# Set root password
+echo "[INFO] Setting root password..."
 read -sp "Enter root password: " ROOT_PASS
 echo
-echo "root:$ROOT_PASS" | chpasswd || { echo "Failed to set root password"; exit 1; }
+echo "root:$ROOT_PASS" | chpasswd
 
-# Install GRUB
+echo "[INFO] Installing GRUB..."
 read -p "Enter the disk to install GRUB (e.g., /dev/sda): " DISK
-if [ ! -b "$DISK" ]; then
-    echo "Invalid disk: $DISK"
-    exit 1
-fi
-grub-install "$DISK" || { echo "GRUB installation failed"; exit 1; }
-grub-mkconfig -o /boot/grub/grub.cfg || { echo "Failed to generate GRUB config"; exit 1; }
+[[ -b "$DISK" ]] || { echo "Invalid disk: $DISK"; exit 1; }
+grub-install "$DISK"
+grub-mkconfig -o /boot/grub/grub.cfg
 
-# Enable services
+echo "[INFO] Enabling services..."
 systemctl enable NetworkManager gdm sshd vmtoolsd.service vmware-vmblock-fuse.service
 
-# Create a new user
+echo "[INFO] Creating user 'technical'..."
 useradd -m -G wheel technical
 read -sp "Enter password for user 'technical': " USER_PASS
 echo
-echo "technical:$USER_PASS" | chpasswd || { echo "Failed to set user password"; exit 1; }
+echo "technical:$USER_PASS" | chpasswd
 
-# Grant sudo privileges to the wheel group
+echo "[INFO] Granting sudo privileges to wheel group..."
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 EOF
 
-# Check if post-install.sh exists
-if [ ! -f /mnt/root/post-install.sh ]; then
-    echo "Post-install script not found. Aborting."
-    exit 1
-fi
+# Make post-install script executable
+chmod +x /mnt/root/post-install.sh
 
-# Check if the script is executable
-if [ ! -x /mnt/root/post-install.sh ]; then
-    echo "Post-install script is not executable. Fixing permissions."
-    chmod +x /mnt/root/post-install.sh || { echo "Failed to make post-install script executable."; exit 1; }
-fi
+# Backup original script if exists
+[ -f /root/arch-setup.sh ] && cp /root/arch-setup.sh /mnt/root/arch-setup.sh.bak
 
-# Backup the script if it exists
-if [ -f /root/arch-setup.sh ]; then
-    cp /root/arch-setup.sh /mnt/root/arch-setup.sh.bak
-fi
+# Ensure /mnt is mounted
+mountpoint -q /mnt || { echo "/mnt is not a valid mount point. Aborting."; exit 1; }
 
-# Check chroot environment
-if ! mountpoint -q /mnt; then
-    echo "/mnt is not a valid mount point. Aborting."
-    exit 1
-fi
-
-# Chroot and run post-install
-arch-chroot /mnt /root/post-install.sh || { echo "Post-install script failed"; exit 1; }
+echo "[INFO] Entering chroot to run post-install script..."
+arch-chroot /mnt /root/post-install.sh
+echo "[INFO] Post-install script completed successfully!"
