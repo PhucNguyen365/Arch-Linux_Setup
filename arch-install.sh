@@ -4,7 +4,7 @@ set -euo pipefail
 set -x
 
 pacstrap /mnt base linux linux-firmware grub networkmanager sudo xorg gnome ibus ibus-unikey \
-vim nano firefox openssh open-vm-tools gtkmm3 gnome-extra git
+vim nano firefox openssh open-vm-tools gtkmm3 gnome-extra
 
 genfstab -U /mnt >> /mnt/etc/fstab 
 
