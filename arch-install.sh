@@ -4,8 +4,8 @@ set -euo pipefail   # Exit if command fails, unset variable used, or pipeline fa
 set -x              # Print commands as they are executed (debug mode)
 
 # Install base system and additional packages into /mnt
-pacstrap /mnt base linux linux-firmware grub networkmanager openssh xorg \
-    gnome lightdm lightdm-gtk-greeter open-vm-tools gtkmm3 vim nano sudo 
+pacstrap /mnt base linux linux-firmware grub networkmanager xorg \
+gnome vim nano sudo 
 
 # Generate fstab for mounted partitions
 genfstab -U /mnt >> /mnt/etc/fstab 
