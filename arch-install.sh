@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===========================================================
 #  Automated Arch Linux Installation Script (UEFI)
-#  Author: Technical (Clean & Final Version)
+#  Author: Technical
 # ===========================================================
 
 set -euo pipefail
