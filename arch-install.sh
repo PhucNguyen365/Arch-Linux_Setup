@@ -28,7 +28,7 @@ echo ">>> Updating Arch Linux keyring..."
 pacman -Sy --noconfirm archlinux-keyring
 
 # --- STEP 1: Partition the disk (GPT) ----------------------------------------
-parted -s /dev/nvme0n1 mklabel gpt \
+parted -s "$DISK" mklabel gpt \
   mkpart ESP fat32 1MiB 513MiB \
   set 1 esp on \
   mkpart primary linux-swap 513MiB 2561MiB \
@@ -102,3 +102,7 @@ arch-chroot /mnt /root/post-install.sh
 # --- STEP 8: Update the newly installed system -------------------------------
 echo ">>> Updating the new Arch Linux installation..."
 arch-chroot /mnt pacman -Syu --noconfirm
+
+# --- STEP 9: Cleanup and reboot
+swapoff -a
+sleep 5 && reboot
