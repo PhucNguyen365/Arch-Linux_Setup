@@ -4,7 +4,7 @@ set -euo pipefail   # Exit if command fails, unset variable used, or pipeline fa
 set -x              # Print commands as they are executed (debug mode)
 
 # Install base system and additional packages into /mnt
-pacstrap /mnt base linux linux-firmware grub networkmanager xorg \
+pacstrap /mnt base linux linux-firmware grub efibootmgr networkmanager xorg \
 gnome vim nano sudo 
 
 # Generate fstab for mounted partitions
@@ -38,16 +38,21 @@ EOT
 # Set root password
 echo "root:technical365" | chpasswd
 
-# Install GRUB bootloader (BIOS Legacy, target disk = /dev/sda)
-grub-install /dev/sda
+# --- GRUB Installation for UEFI on NVMe ---
+# Mount the EFI system partition (assuming /dev/nvme0n1p1 is EFI and formatted FAT32)
+mkdir -p /boot/efi
+mount /dev/nvme0n1p1 /boot/efi
+
+# Install GRUB for UEFI
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
+
+# Generate GRUB configuration
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Enable essential services
 systemctl enable NetworkManager
 systemctl enable gdm
-systemctl enable sshd
-systemctl enable vmtoolsd.service
-systemctl enable vmware-vmblock-fuse.service
+
 EOF
 
 # Make post-install script executable
