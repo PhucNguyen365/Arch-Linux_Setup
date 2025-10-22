@@ -1,45 +1,61 @@
 #!/bin/bash
 # ===========================================================
 #  Automated Arch Linux Installation Script (UEFI)
-#  Author: Technical (Interactive Secure Version)
+#  Author: Technical
 # ===========================================================
 
 set -euo pipefail
 set -x  # Debug mode
 
-# --- USER INPUT SECTION ------------------------------------------------------
+# --- CONFIGURATION -----------------------------------------------------------
+DISK="/dev/nvme0n1"   # Default target disk (NVMe). Change here if needed.
 
-read -rp "Enter target disk (e.g., /dev/nvme0n1 or /dev/sda): " DISK
-read -rp "Enter EFI partition size (e.g., 512MiB): " EFI_SIZE
-read -rp "Enter SWAP partition size (e.g., 2GiB): " SWAP_SIZE
-read -rp "Enter hostname for this system: " HOSTNAME
-read -rp "Enter username for regular user: " USERNAME
+# --- USER INPUT --------------------------------------------------------------
+read -rp "Enter SWAP partition size (in MiB, 1024 MiB = 1 GiB): " SWAP_SIZE
+read -rp "Enter ROOT partition size (in MiB, or press Enter to use remaining space): " ROOT_SIZE
+ROOT_SIZE=${ROOT_SIZE:-100%}  # If empty, default to 100%
+
+read -rp "Enter hostname: " HOSTNAME
+read -rp "Enter username: " USERNAME
 read -rsp "Enter password for user '$USERNAME': " USERPASS
 echo ""
 read -rsp "Enter password for root: " ROOTPASS
 echo ""
 read -rp "Enter timezone (e.g., Asia/Ho_Chi_Minh): " TIMEZONE
 read -rp "Enter locale (e.g., en_US.UTF-8): " LOCALE
-
 # -----------------------------------------------------------------------------
 
 echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
 read -p "Are you sure you want to continue? (y/N): " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || exit 1
 
-# --- STEP 0: Update keyring (for old ISO compatibility) ----------------------
+# --- STEP 0: Update keyring ---------------------------------------------------
 echo ">>> Updating Arch Linux keyring..."
 pacman -Sy --noconfirm archlinux-keyring
 
 # --- STEP 1: Partition the disk (GPT) ----------------------------------------
-echo ">>> Partitioning $DISK ..."
-parted -s "$DISK" mklabel gpt \
-  mkpart ESP fat32 1MiB $EFI_SIZE \
-  set 1 esp on \
-  mkpart primary linux-swap $EFI_SIZE $(echo "$EFI_SIZE" | sed 's/MiB//' | awk '{print $1+2048}')MiB \
-  mkpart primary ext4 2561MiB 100%
+EFI_END=513
+SWAP_START=$EFI_END
+SWAP_END=$((SWAP_START + SWAP_SIZE))
+ROOT_START=$SWAP_END
 
-# --- STEP 2: Format partitions -----------------------------------------------
+echo ""
+echo "Partition layout preview:"
+echo "EFI  : 1–513 MiB"
+echo "SWAP : ${SWAP_START}–${SWAP_END} MiB"
+echo "ROOT : ${ROOT_START}–$ROOT_SIZE"
+echo ""
+read -p "Proceed with these partitions? (y/N): " confirm
+[[ "$confirm" =~ ^[Yy]$ ]] || exit 1
+
+echo ">>> Creating partitions on $DISK..."
+parted -s "$DISK" mklabel gpt \
+  mkpart ESP fat32 1MiB ${EFI_END}MiB \
+  set 1 esp on \
+  mkpart primary linux-swap ${SWAP_START}MiB ${SWAP_END}MiB \
+  mkpart primary ext4 ${ROOT_START}MiB $ROOT_SIZE
+
+# --- STEP 2: Format partitions ------------------------------------------------
 echo ">>> Formatting partitions..."
 mkfs.fat -F32 ${DISK}p1
 mkswap ${DISK}p2
@@ -110,11 +126,11 @@ chmod +x /mnt/root/post-install.sh
 echo ">>> Entering chroot to finalize setup..."
 arch-chroot /mnt /root/post-install.sh
 
-# --- STEP 8: Update the newly installed system -------------------------------
-echo ">>> Updating the new Arch Linux installation..."
+# --- STEP 8: Update the new system -------------------------------------------
+echo ">>> Updating installed system..."
 arch-chroot /mnt pacman -Syu --noconfirm
 
-# --- STEP 9: Cleanup and reboot ----------------------------------------------
+# --- STEP 9: Cleanup ----------------------------------------------------------
 echo ">>> Cleaning up..."
 swapoff -a || true
 umount -R /mnt || true
