@@ -71,7 +71,7 @@ mount ${DISK}p1 /mnt/boot/efi
 # --- STEP 4: Install base system ---------------------------------------------
 echo ">>> Installing base system..."
 pacstrap /mnt base linux linux-firmware vim nano sudo \
-  grub efibootmgr networkmanager gnome
+  grub efibootmgr networkmanager gnome firefox
 
 # --- STEP 5: Generate fstab ---------------------------------------------------
 echo ">>> Generating fstab..."
