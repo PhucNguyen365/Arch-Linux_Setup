@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===========================================================
 #  Automated Arch Linux Installation Script (UEFI)
-#  Author: Technical
+#  Author: Technical (Clean & Final Version)
 # ===========================================================
 
 set -euo pipefail
@@ -13,7 +13,7 @@ DISK="/dev/nvme0n1"   # Default target disk (NVMe). Change here if needed.
 # --- USER INPUT --------------------------------------------------------------
 read -rp "Enter SWAP partition size (in MiB, 1024 MiB = 1 GiB): " SWAP_SIZE
 read -rp "Enter ROOT partition size (in MiB, or press Enter to use remaining space): " ROOT_SIZE
-ROOT_SIZE=${ROOT_SIZE:-100%}  # If empty, default to 100%
+ROOT_SIZE=${ROOT_SIZE:-100%}
 
 read -rp "Enter hostname: " HOSTNAME
 read -rp "Enter username: " USERNAME
@@ -21,8 +21,8 @@ read -rsp "Enter password for user '$USERNAME': " USERPASS
 echo ""
 read -rsp "Enter password for root: " ROOTPASS
 echo ""
-read -rp "Enter timezone (e.g., Asia/Ho_Chi_Minh): " TIMEZONE
-read -rp "Enter locale (e.g., en_US.UTF-8): " LOCALE
+read -rp "Enter timezone: " TIMEZONE
+read -rp "Enter locale: " LOCALE
 # -----------------------------------------------------------------------------
 
 echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
