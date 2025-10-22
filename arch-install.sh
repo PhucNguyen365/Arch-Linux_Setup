@@ -28,10 +28,11 @@ echo ">>> Updating Arch Linux keyring..."
 pacman -Sy --noconfirm archlinux-keyring
 
 # --- STEP 1: Partition the disk (GPT) ----------------------------------------
-parted -s "$DISK" mklabel gpt \
-  mkpart ESP fat32 1MiB $EFI_SIZE set 1 esp on \
-  mkpart primary linux-swap $EFI_SIZE $(echo "$EFI_SIZE + $SWAP_SIZE" | bc) \
-  mkpart primary ext4 $(echo "$EFI_SIZE + $SWAP_SIZE" | bc) 100%
+parted -s /dev/nvme0n1 mklabel gpt \
+  mkpart ESP fat32 1MiB 513MiB \
+  set 1 esp on \
+  mkpart primary linux-swap 513MiB 2561MiB \
+  mkpart primary ext4 2561MiB 100%
 
 # --- STEP 2: Format partitions -----------------------------------------------
 mkfs.fat -F32 ${DISK}p1
