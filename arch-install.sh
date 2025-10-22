@@ -1,65 +1,95 @@
 #!/bin/bash
+# ===========================================================
+#  Automated Arch Linux Installation Script (UEFI)
+#  Author: Technical + GPT-5
+# ===========================================================
 
-set -euo pipefail   # Exit if command fails, unset variable used, or pipeline fails
-set -x              # Print commands as they are executed (debug mode)
+set -euo pipefail
+set -x  # Print each command (debug mode)
 
-# Install base system and additional packages into /mnt
-pacstrap /mnt base linux linux-firmware grub efibootmgr networkmanager xorg \
-gnome vim nano sudo 
+# --- CONFIGURATION SECTION ---------------------------------------------------
+DISK="/dev/nvme0n1"             # Target installation disk
+EFI_SIZE="512MiB"               # EFI partition size
+SWAP_SIZE="2GiB"                # Swap partition size
+HOSTNAME="archlinux"
+USERNAME="technical"
+USERPASS="technical365"         # <-- Change this to your preferred user password
+ROOTPASS="root365"              # <-- Change this to your preferred root password
+TIMEZONE="Asia/Ho_Chi_Minh"
+LOCALE="en_US.UTF-8"
+# -----------------------------------------------------------------------------
 
-# Generate fstab for mounted partitions
-genfstab -U /mnt >> /mnt/etc/fstab 
+echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
+read -p "Are you sure you want to continue? (y/N): " confirm
+[[ "$confirm" =~ ^[Yy]$ ]] || exit 1
 
-# Create post-install script inside the new system
-cat > /mnt/root/post-install.sh <<'EOF'
+# --- STEP 1: Partition the disk (GPT) ----------------------------------------
+parted -s "$DISK" mklabel gpt \
+  mkpart ESP fat32 1MiB $EFI_SIZE set 1 esp on \
+  mkpart primary linux-swap $EFI_SIZE $(echo "$EFI_SIZE + $SWAP_SIZE" | bc) \
+  mkpart primary ext4 $(echo "$EFI_SIZE + $SWAP_SIZE" | bc) 100%
 
+# --- STEP 2: Format partitions -----------------------------------------------
+mkfs.fat -F32 ${DISK}p1
+mkswap ${DISK}p2
+mkfs.ext4 ${DISK}p3
+
+# --- STEP 3: Mount partitions -------------------------------------------------
+mount ${DISK}p3 /mnt
+swapon ${DISK}p2
+mkdir -p /mnt/boot/efi
+mount ${DISK}p1 /mnt/boot/efi
+
+# --- STEP 4: Install base system ---------------------------------------------
+pacstrap /mnt base linux linux-firmware vim nano sudo \
+  grub efibootmgr networkmanager xorg gnome
+
+# --- STEP 5: Generate fstab ---------------------------------------------------
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# --- STEP 6: Create post-installation script ---------------------------------
+cat > /mnt/root/post-install.sh <<EOF
 #!/bin/bash
-
 set -euo pipefail
 set -x
 
-# Set timezone and sync hardware clock
-ln -sf /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
+# --- Timezone & Clock ---
+ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
 
-# Configure locale
-echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+# --- Locale ---
+echo "$LOCALE UTF-8" >> /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "LANG=$LOCALE" > /etc/locale.conf
 
-# Set hostname and hosts file
-echo "archlinux" > /etc/hostname
+# --- Hostname & Hosts ---
+echo "$HOSTNAME" > /etc/hostname
 cat > /etc/hosts <<EOT
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   archlinux.localdomain archlinux
+127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
 EOT
 
-# Set root password
-echo "root:technical365" | chpasswd
+# --- Root password ---
+echo "root:$ROOTPASS" | chpasswd
 
-# --- GRUB Installation for UEFI on NVMe ---
-# Mount the EFI system partition (assuming /dev/nvme0n1p1 is EFI and formatted FAT32)
+# --- GRUB Installation (UEFI) ---
 mkdir -p /boot/efi
-mount /dev/nvme0n1p1 /boot/efi
-
-# Install GRUB for UEFI
+mount ${DISK}p1 /boot/efi
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
-
-# Generate GRUB configuration
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Enable essential services
+# --- Enable essential services ---
 systemctl enable NetworkManager
 systemctl enable gdm
 
+# --- Create normal user ---
+useradd -m -G wheel -s /bin/bash $USERNAME
+echo "$USERNAME:$USERPASS" | chpasswd
+echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
 EOF
 
-# Make post-install script executable
 chmod +x /mnt/root/post-install.sh
 
-# Backup this setup script into the new system
-cat /root/arch-setup.sh >> /mnt/root/arch-setup.sh.bak
-
-# Enter the new system and run the post-install script
+# --- STEP 7: Enter chroot and finalize installation --------------------------
 arch-chroot /mnt /root/post-install.sh
