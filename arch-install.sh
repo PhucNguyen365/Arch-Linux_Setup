@@ -1,22 +1,26 @@
 #!/bin/bash
 # ===========================================================
 #  Automated Arch Linux Installation Script (UEFI)
-#  Author: Technical
+#  Author: Technical (Interactive Secure Version)
 # ===========================================================
 
 set -euo pipefail
-set -x  # Print each command (debug mode)
+set -x  # Debug mode
 
-# --- CONFIGURATION SECTION ---------------------------------------------------
-DISK="/dev/nvme0n1"             # Target installation disk
-EFI_SIZE="512MiB"               # EFI partition size
-SWAP_SIZE="2GiB"                # Swap partition size
-HOSTNAME="archlinux"
-USERNAME="technical"
-USERPASS="technical365"         # <-- Change this to your preferred user password
-ROOTPASS="root365"              # <-- Change this to your preferred root password
-TIMEZONE="Asia/Ho_Chi_Minh"
-LOCALE="en_US.UTF-8"
+# --- USER INPUT SECTION ------------------------------------------------------
+
+read -rp "Enter target disk (e.g., /dev/nvme0n1 or /dev/sda): " DISK
+read -rp "Enter EFI partition size (e.g., 512MiB): " EFI_SIZE
+read -rp "Enter SWAP partition size (e.g., 2GiB): " SWAP_SIZE
+read -rp "Enter hostname for this system: " HOSTNAME
+read -rp "Enter username for regular user: " USERNAME
+read -rsp "Enter password for user '$USERNAME': " USERPASS
+echo ""
+read -rsp "Enter password for root: " ROOTPASS
+echo ""
+read -rp "Enter timezone (e.g., Asia/Ho_Chi_Minh): " TIMEZONE
+read -rp "Enter locale (e.g., en_US.UTF-8): " LOCALE
+
 # -----------------------------------------------------------------------------
 
 echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
@@ -28,31 +32,37 @@ echo ">>> Updating Arch Linux keyring..."
 pacman -Sy --noconfirm archlinux-keyring
 
 # --- STEP 1: Partition the disk (GPT) ----------------------------------------
+echo ">>> Partitioning $DISK ..."
 parted -s "$DISK" mklabel gpt \
-  mkpart ESP fat32 1MiB 513MiB \
+  mkpart ESP fat32 1MiB $EFI_SIZE \
   set 1 esp on \
-  mkpart primary linux-swap 513MiB 2561MiB \
+  mkpart primary linux-swap $EFI_SIZE $(echo "$EFI_SIZE" | sed 's/MiB//' | awk '{print $1+2048}')MiB \
   mkpart primary ext4 2561MiB 100%
 
 # --- STEP 2: Format partitions -----------------------------------------------
+echo ">>> Formatting partitions..."
 mkfs.fat -F32 ${DISK}p1
 mkswap ${DISK}p2
 mkfs.ext4 ${DISK}p3
 
 # --- STEP 3: Mount partitions -------------------------------------------------
+echo ">>> Mounting partitions..."
 mount ${DISK}p3 /mnt
 swapon ${DISK}p2
 mkdir -p /mnt/boot/efi
 mount ${DISK}p1 /mnt/boot/efi
 
 # --- STEP 4: Install base system ---------------------------------------------
+echo ">>> Installing base system..."
 pacstrap /mnt base linux linux-firmware vim nano sudo \
-  grub efibootmgr networkmanager xorg gnome
+  grub efibootmgr networkmanager gnome
 
 # --- STEP 5: Generate fstab ---------------------------------------------------
+echo ">>> Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 
 # --- STEP 6: Create post-installation script ---------------------------------
+echo ">>> Creating post-installation configuration script..."
 cat > /mnt/root/post-install.sh <<EOF
 #!/bin/bash
 set -euo pipefail
@@ -97,14 +107,16 @@ EOF
 chmod +x /mnt/root/post-install.sh
 
 # --- STEP 7: Enter chroot and finalize installation --------------------------
+echo ">>> Entering chroot to finalize setup..."
 arch-chroot /mnt /root/post-install.sh
 
 # --- STEP 8: Update the newly installed system -------------------------------
 echo ">>> Updating the new Arch Linux installation..."
 arch-chroot /mnt pacman -Syu --noconfirm
 
-# --- STEP 9: Cleanup and unmount partitions ----------------------------------
-echo ">>> Cleaning up and unmounting partitions..."
+# --- STEP 9: Cleanup and reboot ----------------------------------------------
+echo ">>> Cleaning up..."
 swapoff -a || true
 umount -R /mnt || true
+echo ">>> Installation complete! Rebooting in 5 seconds..."
 sleep 5 && reboot
