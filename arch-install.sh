@@ -103,6 +103,8 @@ arch-chroot /mnt /root/post-install.sh
 echo ">>> Updating the new Arch Linux installation..."
 arch-chroot /mnt pacman -Syu --noconfirm
 
-# --- STEP 9: Cleanup and reboot
-swapoff -a
+# --- STEP 9: Cleanup and unmount partitions ----------------------------------
+echo ">>> Cleaning up and unmounting partitions..."
+swapoff -a || true
+umount -R /mnt || true
 sleep 5 && reboot
