@@ -23,6 +23,10 @@ echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
 read -p "Are you sure you want to continue? (y/N): " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || exit 1
 
+# --- STEP 0: Update keyring (for old ISO compatibility) ----------------------
+echo ">>> Updating Arch Linux keyring..."
+pacman -Sy --noconfirm archlinux-keyring
+
 # --- STEP 1: Partition the disk (GPT) ----------------------------------------
 parted -s "$DISK" mklabel gpt \
   mkpart ESP fat32 1MiB $EFI_SIZE set 1 esp on \
@@ -93,3 +97,7 @@ chmod +x /mnt/root/post-install.sh
 
 # --- STEP 7: Enter chroot and finalize installation --------------------------
 arch-chroot /mnt /root/post-install.sh
+
+# --- STEP 8: Update the newly installed system -------------------------------
+echo ">>> Updating the new Arch Linux installation..."
+arch-chroot /mnt pacman -Syu --noconfirm
