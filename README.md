@@ -39,5 +39,3 @@ By running this script, you will get a fully configured system with:
 
 ### Step 2: Connect to Internet
 The script requires an active internet connection.
-# Connect to Wi-Fi (if using Ethernet, skip this)
-iwctl
