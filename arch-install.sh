@@ -1,138 +1,162 @@
 #!/bin/bash
-# ===========================================================
-#  Automated Arch Linux Installation Script (UEFI)
-#  Author: Technical
-# ===========================================================
+# ==============================================================================
+#  Automated Arch Linux Installation Script (UEFI + GNOME Desktop)
+#  - Security: No Root password (sudo only), Hashed user password.
+#  - Compatibility: Auto-detects NVMe/SATA partition naming.
+#  - Desktop: GNOME + Firefox included.
+# ==============================================================================
 
 set -euo pipefail
-set -x  # Debug mode
 
-# --- CONFIGURATION -----------------------------------------------------------
-DISK="/dev/nvme0n1"   # Default target disk (NVMe). Change here if needed.
+# --- CONFIGURATION ------------------------------------------------------------
+TARGET_DISK="/dev/nvme0n1"
 
-# --- USER INPUT --------------------------------------------------------------
-read -rp "Enter SWAP partition size (in MiB, 1024 MiB = 1 GiB): " SWAP_SIZE
-read -rp "Enter ROOT partition size (in MiB, or press Enter to use remaining space): " ROOT_SIZE
-ROOT_SIZE=${ROOT_SIZE:-100%}
+# --- HELPER FUNCTIONS ---------------------------------------------------------
+print_msg() { echo -e "\n\033[1;32m>>> $1\033[0m"; }
+print_warn() { echo -e "\n\033[1;33m>>> WARNING: $1\033[0m"; }
 
-read -rp "Enter hostname: " HOSTNAME
-read -rp "Enter username: " USERNAME
-read -rsp "Enter password for user '$USERNAME': " USERPASS
-echo ""
-read -rsp "Enter password for root: " ROOTPASS
-echo ""
-read -rp "Enter timezone: " TIMEZONE
-read -rp "Enter locale: " LOCALE
-# -----------------------------------------------------------------------------
+# --- PRE-FLIGHT CHECKS --------------------------------------------------------
+if [ ! -d "/sys/firmware/efi/efivars" ]; then
+    print_warn "This script requires the system to be booted in UEFI mode."
+    exit 1
+fi
 
-echo ">>> WARNING: ALL DATA on $DISK will be ERASED!"
+# --- USER INPUT ---------------------------------------------------------------
+print_msg "User Configuration"
+
+# 1. Disk Selection
+read -rp "Enter target disk (default: $TARGET_DISK): " input_disk
+TARGET_DISK="${input_disk:-$TARGET_DISK}"
+
+# 2. Partition Sizes
+read -rp "Enter SWAP size in MiB (e.g., 4096): " SWAP_SIZE
+if [[ ! "$SWAP_SIZE" =~ ^[0-9]+$ ]]; then echo "Error: Swap must be a number."; exit 1; fi
+
+# 3. System Info
+read -rp "Enter Hostname: " HOST_NAME
+read -rp "Enter Username: " USER_NAME
+
+# 4. Password (Secure Input)
+while true; do
+    read -rsp "Enter Password for user '$USER_NAME': " USER_PASS
+    echo ""
+    read -rsp "Confirm Password: " USER_PASS_CONFIRM
+    echo ""
+    [ "$USER_PASS" = "$USER_PASS_CONFIRM" ] && break
+    echo "Passwords do not match. Please try again."
+done
+
+# 5. Localization
+read -rp "Enter Timezone (e.g., Asia/Ho_Chi_Minh): " TIME_ZONE
+read -rp "Enter Locale (default: en_US.UTF-8): " LOCALE_CONF
+LOCALE_CONF="${LOCALE_CONF:-en_US.UTF-8}"
+
+# --- SECURITY: PRE-HASH PASSWORD ----------------------------------------------
+USER_PASS_HASH=$(openssl passwd -6 "$USER_PASS")
+
+# --- PARTITION LOGIC ----------------------------------------------------------
+if [[ "$TARGET_DISK" == *"nvme"* ]] || [[ "$TARGET_DISK" == *"mmcblk"* ]]; then
+    PART_PREFIX="${TARGET_DISK}p"
+else
+    PART_PREFIX="${TARGET_DISK}"
+fi
+
+PART_EFI="${PART_PREFIX}1"
+PART_SWAP="${PART_PREFIX}2"
+PART_ROOT="${PART_PREFIX}3"
+
+# --- CONFIRMATION -------------------------------------------------------------
+print_warn "CRITICAL WARNING: ALL DATA ON $TARGET_DISK WILL BE ERASED."
+print_warn "DO NOT USE THIS ON A DUAL-BOOT DRIVE WITH WINDOWS INSTALLED."
+echo "------------------------------------------------"
+echo "  Disk:      $TARGET_DISK"
+echo "  User:      $USER_NAME"
+echo "  Desktop:   GNOME + Firefox"
+echo "------------------------------------------------"
 read -p "Are you sure you want to continue? (y/N): " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || exit 1
 
-# --- STEP 0: Update keyring ---------------------------------------------------
-echo ">>> Updating Arch Linux keyring..."
-pacman -Sy --noconfirm archlinux-keyring
-
-# --- STEP 1: Partition the disk (GPT) ----------------------------------------
-EFI_END=513
-SWAP_START=$EFI_END
-SWAP_END=$((SWAP_START + SWAP_SIZE))
-ROOT_START=$SWAP_END
-
-echo ""
-echo "Partition layout preview:"
-echo "EFI  : 1–513 MiB"
-echo "SWAP : ${SWAP_START}–${SWAP_END} MiB"
-echo "ROOT : ${ROOT_START}–$ROOT_SIZE"
-echo ""
-read -p "Proceed with these partitions? (y/N): " confirm
-[[ "$confirm" =~ ^[Yy]$ ]] || exit 1
-
-echo ">>> Creating partitions on $DISK..."
-parted -s "$DISK" mklabel gpt \
-  mkpart ESP fat32 1MiB ${EFI_END}MiB \
+# --- STEP 1: PARTITIONING -----------------------------------------------------
+print_msg "Partitioning disk..."
+timedatectl set-ntp true
+parted -s "$TARGET_DISK" mklabel gpt \
+  mkpart ESP fat32 1MiB 513MiB \
   set 1 esp on \
-  mkpart primary linux-swap ${SWAP_START}MiB ${SWAP_END}MiB \
-  mkpart primary ext4 ${ROOT_START}MiB $ROOT_SIZE
+  mkpart primary linux-swap 513MiB "$((513 + SWAP_SIZE))MiB" \
+  mkpart primary ext4 "$((513 + SWAP_SIZE))MiB" 100%
 
-# --- STEP 2: Format partitions ------------------------------------------------
-echo ">>> Formatting partitions..."
-mkfs.fat -F32 ${DISK}p1
-mkswap ${DISK}p2
-mkfs.ext4 ${DISK}p3
+# --- STEP 2: FORMATTING -------------------------------------------------------
+print_msg "Formatting partitions..."
+mkfs.fat -F32 "$PART_EFI"
+mkswap "$PART_SWAP"
+mkfs.ext4 "$PART_ROOT"
 
-# --- STEP 3: Mount partitions -------------------------------------------------
-echo ">>> Mounting partitions..."
-mount ${DISK}p3 /mnt
-swapon ${DISK}p2
+# --- STEP 3: MOUNTING ---------------------------------------------------------
+print_msg "Mounting partitions..."
+mount "$PART_ROOT" /mnt
+swapon "$PART_SWAP"
 mkdir -p /mnt/boot/efi
-mount ${DISK}p1 /mnt/boot/efi
+mount "$PART_EFI" /mnt/boot/efi
 
-# --- STEP 4: Install base system ---------------------------------------------
-echo ">>> Installing base system..."
+# --- STEP 4: INSTALLATION (BASE + GNOME) --------------------------------------
+print_msg "Installing Base System, GNOME, and Firefox..."
 pacstrap /mnt base linux linux-firmware vim nano sudo \
-  grub efibootmgr networkmanager gnome firefox
+  grub efibootmgr networkmanager git intel-ucode amd-ucode \
+  gnome gnome-extra firefox
 
-# --- STEP 5: Generate fstab ---------------------------------------------------
-echo ">>> Generating fstab..."
+# --- STEP 5: FSTAB ------------------------------------------------------------
+print_msg "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# --- STEP 6: Create post-installation script ---------------------------------
-echo ">>> Creating post-installation configuration script..."
-cat > /mnt/root/post-install.sh <<EOF
+# --- STEP 6: CONFIGURATION SCRIPT ---------------------------------------------
+print_msg "Configuring system..."
+cat > /mnt/setup_system.sh <<EOF
 #!/bin/bash
-set -euo pipefail
-set -x
+set -e
 
-# --- Timezone & Clock ---
-ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
+# Timezone & Clock
+ln -sf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime
 hwclock --systohc
 
-# --- Locale ---
-echo "$LOCALE UTF-8" >> /etc/locale.gen
+# Locale
+sed -i "s/^#$LOCALE_CONF/$LOCALE_CONF/" /etc/locale.gen
 locale-gen
-echo "LANG=$LOCALE" > /etc/locale.conf
+echo "LANG=$LOCALE_CONF" > /etc/locale.conf
 
-# --- Hostname & Hosts ---
-echo "$HOSTNAME" > /etc/hostname
-cat > /etc/hosts <<EOT
+# Hostname
+echo "$HOST_NAME" > /etc/hostname
+cat > /etc/hosts <<HOSTS
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
-EOT
+127.0.1.1   $HOST_NAME.localdomain $HOST_NAME
+HOSTS
 
-# --- Root password ---
-echo "root:$ROOTPASS" | chpasswd
+# User & Sudo (Root Locked)
+useradd -m -G wheel -s /bin/bash -p '$USER_PASS_HASH' $USER_NAME
+echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
+passwd -l root
 
-# --- GRUB Installation (UEFI) ---
-mkdir -p /boot/efi
-mount ${DISK}p1 /boot/efi
+# Bootloader
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# --- Enable essential services ---
+# Services (Enable Network & GNOME Login)
 systemctl enable NetworkManager
 systemctl enable gdm
 
-# --- Create normal user ---
-useradd -m -G wheel -s /bin/bash $USERNAME
-echo "$USERNAME:$USERPASS" | chpasswd
-echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
 EOF
 
-chmod +x /mnt/root/post-install.sh
+chmod +x /mnt/setup_system.sh
 
-# --- STEP 7: Enter chroot and finalize installation --------------------------
-echo ">>> Entering chroot to finalize setup..."
-arch-chroot /mnt /root/post-install.sh
+# --- STEP 7: FINALIZE ---------------------------------------------------------
+print_msg "Entering chroot..."
+arch-chroot /mnt /setup_system.sh
 
-# --- STEP 8: Update the new system -------------------------------------------
-echo ">>> Updating installed system..."
-arch-chroot /mnt pacman -Syu --noconfirm
+print_msg "Cleaning up..."
+rm /mnt/setup_system.sh
+umount -R /mnt
+swapoff -a
 
-# --- STEP 9: Cleanup ----------------------------------------------------------
-echo ">>> Cleaning up..."
-swapoff -a || true
-umount -R /mnt || true
-echo ">>> Installation complete! Rebooting in 5 seconds..."
-sleep 5 && reboot
+print_msg "SUCCESS! Rebooting in 5s..."
+sleep 5
+reboot
