@@ -3,7 +3,6 @@
 A secure, automated Bash script to install Arch Linux with the **GNOME Desktop Environment**.
 Designed for speed, simplicity, and security on UEFI systems.
 
-![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![System](https://img.shields.io/badge/System-UEFI%20Only-blue.svg)
 ![Distro](https://img.shields.io/badge/Distro-Arch%20Linux-1793d1.svg)
 
