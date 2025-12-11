@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-#  Automated Arch Linux Installation Script (UEFI + GNOME Desktop)
-#  Simple, Clean, and Destructive.
+#  Automated Arch Linux Installation Script 
 # ==============================================================================
 
 set -euo pipefail
@@ -24,7 +23,7 @@ fi
 print_msg "Checking internet connection..."
 ping -c 1 archlinux.org >/dev/null 2>&1 || print_err "No internet connection. Please connect via 'iwctl' first."
 
-# 3. Cleanup previous runs (Fix ChatGPT suggestion #3)
+# 3. Cleanup previous runs 
 print_msg "Cleaning up previous mounts if any..."
 swapoff -a || true
 umount -R /mnt || true
@@ -32,7 +31,7 @@ umount -R /mnt || true
 # --- USER INPUT ---------------------------------------------------------------
 print_msg "User Configuration"
 
-# Disk Selection & Validation (Fix ChatGPT suggestion #2)
+# Disk Selection & Validation 
 lsblk
 echo ""
 read -rp "Enter target disk (default: $TARGET_DISK): " input_disk
