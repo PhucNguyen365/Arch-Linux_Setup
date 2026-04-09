@@ -130,7 +130,7 @@ set -e
 ln -sf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime
 hwclock --systohc
 
-# Locale (Fix ChatGPT suggestion #1 - More robust sed)
+# Locale
 sed -i "s/^#$LOCALE_CONF UTF-8/$LOCALE_CONF UTF-8/" /etc/locale.gen
 locale-gen
 echo "LANG=$LOCALE_CONF" > /etc/locale.conf
